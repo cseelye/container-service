@@ -1,0 +1,12 @@
+[Unit]
+Description=Container Service
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=notify
+ExecStartPre=-/usr/bin/docker container rm --force %I
+ExecStart=/usr/local/bin/run-container-service %I:latest
+
+[Install]
+WantedBy=multi-user.target

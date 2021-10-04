@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -eEuo pipefail
+
+IMAGE_NAME=${1}
+APP_NAME=${2-}
+if [[ -z ${APP_NAME} ]]; then
+    APP_NAME=${IMAGE_NAME%%:*}
+fi
+
+# Make sure we are root/sudo or re-exec if not
+[[ "$UID" -eq 0 ]] || exec sudo "$0" "$@"
+
+function watchdog()
+{
+    sleep 1
+    while true; do
+        status=$(docker container inspect --format='{{json .State.Health.Status }}' ${APP_NAME} | tr -d '"' || true)
+        if [[ -n ${status} &&
+              ${status} != "starting" && ${status} != "healthy" ]]; then
+            # container healthcheck has failed so stop the container and let the service manager restart it
+            docker container rm --force ${APP_NAME}
+            exit 1
+        fi
+        sleep 30
+    done
+}
+
+# Start the watchdog function in the background
+watchdog &
+
+# Get container args
+EXTRA_ARGS=""
+arg_filename="/etc/$(systemd-escape ${APP_NAME})"
+if [[ -e ${arg_filename} ]]; then
+    EXTRA_ARGS=$(cat ${arg_filename})
+fi
+
+# Start the container
+exec docker container run --rm \
+        --name ${APP_NAME} \
+        ${EXTRA_ARGS} \
+        ${IMAGE_NAME}
